@@ -22,6 +22,12 @@
                 <a href="#" class="nav-item" data-tab="search">
                     <i class="fas fa-search"></i> Search
                 </a>
+                <a href="#" class="nav-item" data-tab="my-music">
+                    <i class="fas fa-music"></i> My Music
+                </a>
+                <a href="#" class="nav-item" data-tab="upload">
+                    <i class="fas fa-upload"></i> Upload
+                </a>
                 <a href="#" class="nav-item" data-tab="favorites">
                     <i class="fas fa-heart"></i> Favorites
                 </a>
@@ -52,6 +58,33 @@
                 <div id="search-tab" class="tab-content">
                     <h2>Search Results</h2>
                     <div class="track-list" id="search-results"></div>
+                </div>
+
+                <!-- My Music Tab -->
+                <div id="my-music-tab" class="tab-content">
+                    <h2>My Music</h2>
+                    <div class="track-list" id="my-music-list"></div>
+                </div>
+
+                <!-- Upload Tab -->
+                <div id="upload-tab" class="tab-content">
+                    <div class="upload-section">
+                        <h2>Upload Music</h2>
+                        <div class="upload-container">
+                            <input type="file" id="music-upload" accept="audio/*" multiple style="display: none;">
+                            <button id="upload-btn" class="upload-button">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                Choose Music Files
+                            </button>
+                            <p class="upload-info">Supported formats: MP3, WAV, OGG, M4A, AAC, FLAC (Max 50MB each)</p>
+                            <div id="upload-progress" class="upload-progress" style="display: none;">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progress-fill"></div>
+                                </div>
+                                <p id="progress-text">Uploading...</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Favorites Tab -->

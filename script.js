@@ -12,13 +12,17 @@ const nextBtn = document.getElementById('next-btn');
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const likeBtn = document.getElementById('like-btn');
+const uploadBtn = document.getElementById('upload-btn');
+const musicUpload = document.getElementById('music-upload');
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     console.log('App initialized');
     setupTabNavigation();
     setupPlayerControls();
+    setupUploadFunctionality();
     loadFeaturedTracks();
+    loadMyMusic();
 });
 
 // Setup tab navigation
@@ -46,6 +50,11 @@ function setupTabNavigation() {
             const selectedTab = document.getElementById(`${tab}-tab`);
             if (selectedTab) {
                 selectedTab.classList.add('active');
+                
+                // Load content for specific tabs
+                if (tab === 'my-music') {
+                    loadMyMusic();
+                }
             }
         });
     });
@@ -141,12 +150,18 @@ function createTrackItem(track) {
     item.className = 'track-item';
     
     const coverUrl = track.album?.cover || `https://via.placeholder.com/50?text=${encodeURIComponent((track.title || 'Song').substring(0, 2))}`;
+    const isFullSong = track.source === 'upload' || track.url;
+    const sourceIcon = track.source === 'upload' ? 'fas fa-hdd' : 'fab fa-itunes-note';
+    const sourceText = track.source === 'upload' ? 'Full Song' : '30s Preview';
     
     item.innerHTML = `
         <img src="${coverUrl}" alt="${track.title || 'Song'}" onerror="this.src='https://via.placeholder.com/50?text=M'">
         <div class="track-item-info">
             <div class="track-item-name">${track.title || 'Unknown Track'}</div>
             <div class="track-item-artist">${track.artist?.name || 'Unknown Artist'}</div>
+            <div class="track-source">
+                <i class="${sourceIcon}"></i> ${sourceText}
+            </div>
         </div>
         <button class="track-item-btn" title="Play">
             <i class="fas fa-play"></i>
@@ -166,9 +181,10 @@ function playTrack(track) {
     if (!track) return;
     
     currentTrack = track;
-    audioPlayer.src = track.preview || track.url || '';
+    // Use full URL if available, otherwise use preview
+    audioPlayer.src = track.url || track.preview || '';
     
-    console.log('Playing track:', track.title, 'URL:', audioPlayer.src);
+    console.log('Playing track:', track.title, 'Source:', track.source, 'URL:', audioPlayer.src);
     
     // Update player display - make sure it's visible
     const playerContainer = document.querySelector('.player-container');
@@ -177,7 +193,12 @@ function playTrack(track) {
     }
     
     document.querySelector('.song-name').textContent = track.title || 'Unknown Track';
-    document.querySelector('.artist-name').textContent = track.artist?.name || 'Unknown Artist';
+    
+    // Add source info to artist name
+    const sourceIndicator = track.source === 'upload' ? 
+        '<i class="fas fa-hdd"></i> Full Song' : 
+        '<i class="fab fa-itunes-note"></i> Preview (30s)';
+    document.querySelector('.artist-name').innerHTML = `${track.artist?.name || 'Unknown Artist'} <span style="color: var(--primary-color); font-size: 10px;">${sourceIndicator}</span>`;
     
     const coverUrl = track.album?.cover || `https://via.placeholder.com/56?text=${encodeURIComponent((track.title || 'Music').substring(0, 2))}`;
     document.getElementById('album-art').src = coverUrl;
@@ -209,6 +230,13 @@ function setupPlayerControls() {
         if (e.key === 'Enter') performSearch();
     });
     
+    // Upload
+    uploadBtn.addEventListener('click', () => {
+        musicUpload.click();
+    });
+    
+    musicUpload.addEventListener('change', handleFileUpload);
+    
     // Audio player events
     audioPlayer.addEventListener('timeupdate', updateProgressBar);
     audioPlayer.addEventListener('ended', playNext);
@@ -217,6 +245,12 @@ function setupPlayerControls() {
         const time = (e.target.value / 100) * audioPlayer.duration;
         audioPlayer.currentTime = time;
     });
+}
+
+// Setup upload functionality
+function setupUploadFunctionality() {
+    // Upload functionality is already handled in setupPlayerControls
+    // This function is here for consistency
 }
 
 // Player control functions
@@ -320,14 +354,41 @@ function displaySearchResults(tracks) {
         return;
     }
     
-    tracks.forEach(track => {
-        if (track) {
-            const item = createTrackItem(track);
-            if (item) {
-                container.appendChild(item);
+    // Group tracks by source
+    const uploadedTracks = tracks.filter(track => track.source === 'upload');
+    const previewTracks = tracks.filter(track => track.source === 'itunes');
+    
+    // Display uploaded tracks first
+    if (uploadedTracks.length > 0) {
+        const uploadedSection = document.createElement('div');
+        uploadedSection.innerHTML = '<h3 style="color: var(--primary-color); margin: 20px 0 10px 0;"><i class="fas fa-hdd"></i> Your Uploaded Songs</h3>';
+        container.appendChild(uploadedSection);
+        
+        uploadedTracks.forEach(track => {
+            if (track) {
+                const item = createTrackItem(track);
+                if (item) {
+                    container.appendChild(item);
+                }
             }
-        }
-    });
+        });
+    }
+    
+    // Display preview tracks
+    if (previewTracks.length > 0) {
+        const previewSection = document.createElement('div');
+        previewSection.innerHTML = '<h3 style="color: var(--text-secondary); margin: 20px 0 10px 0;"><i class="fab fa-itunes-note"></i> Preview Tracks (30s)</h3>';
+        container.appendChild(previewSection);
+        
+        previewTracks.forEach(track => {
+            if (track) {
+                const item = createTrackItem(track);
+                if (item) {
+                    container.appendChild(item);
+                }
+            }
+        });
+    }
 }
 
 // Update favorites display
@@ -343,6 +404,88 @@ function updateFavorites() {
     favorites.forEach(track => {
         if (track) {
             const item = createTrackItem(track);
+            if (item) {
+                container.appendChild(item);
+            }
+        }
+    });
+}
+
+// Handle file upload
+async function handleFileUpload(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const uploadBtn = document.getElementById('upload-btn');
+    const originalText = uploadBtn.innerHTML;
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    uploadBtn.disabled = true;
+    
+    try {
+        for (const file of files) {
+            const formData = new FormData();
+            formData.append('music', file);
+            
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log('Uploaded:', result.file.title);
+            } else {
+                alert(`Failed to upload ${file.name}: ${result.error}`);
+            }
+        }
+        
+        // Reload my music after upload
+        loadMyMusic();
+        alert('Upload complete!');
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        alert('Upload failed. Please try again.');
+    } finally {
+        uploadBtn.innerHTML = originalText;
+        uploadBtn.disabled = false;
+        // Clear the file input
+        event.target.value = '';
+    }
+}
+
+// Load user's uploaded music
+async function loadMyMusic() {
+    console.log('Loading my music...');
+    const container = document.getElementById('my-music-list');
+    
+    try {
+        const response = await fetch('/api/my-music');
+        const data = await response.json();
+        console.log('My music:', data.data);
+        
+        if (data.data && data.data.length > 0) {
+            displayMyMusic(data.data);
+        } else {
+            container.innerHTML = '<p style="padding: 20px; color: var(--text-secondary);">No music uploaded yet. Click "Upload Music Files" to add your songs!</p>';
+        }
+    } catch (error) {
+        console.error('Error loading my music:', error);
+        container.innerHTML = '<p style="padding: 20px; color: var(--text-secondary);">Error loading your music</p>';
+    }
+}
+
+// Display user's uploaded music
+function displayMyMusic(songs) {
+    const container = document.getElementById('my-music-list');
+    container.innerHTML = '';
+    
+    console.log('Displaying my music:', songs.length);
+    
+    songs.forEach(song => {
+        if (song) {
+            const item = createTrackItem(song);
             if (item) {
                 container.appendChild(item);
             }

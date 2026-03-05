@@ -255,6 +255,19 @@ body {
     font-size: 12px;
 }
 
+.track-source {
+    font-size: 10px;
+    color: var(--primary-color);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.track-source i {
+    font-size: 8px;
+}
+
 .track-item-btn {
     background-color: var(--primary-color);
     color: white;
@@ -272,6 +285,53 @@ body {
 .track-item-btn:hover {
     background-color: var(--primary-dark);
     transform: scale(1.1);
+}
+
+/* Upload Section */
+.upload-section {
+    margin-bottom: 30px;
+}
+
+.upload-container {
+    background-color: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    border: 2px dashed var(--border-color);
+    margin-bottom: 20px;
+}
+
+.upload-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 16px 32px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+    margin-bottom: 12px;
+}
+
+.upload-button:hover:not(:disabled) {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(124, 58, 237, 0.3);
+}
+
+.upload-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.upload-info {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0;
 }
 
 /* Player */
@@ -405,20 +465,70 @@ body {
     display: none;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
+/* Upload Section */
+.upload-section {
+    margin-bottom: 30px;
 }
 
-::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+.upload-container {
+    background-color: var(--bg-secondary);
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
 }
 
-::-webkit-scrollbar-thumb {
-    background: var(--bg-tertiary);
+.upload-container:hover {
+    border-color: var(--primary-color);
+    background-color: rgba(124, 58, 237, 0.05);
+}
+
+.upload-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 16px 32px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+    margin-bottom: 12px;
+}
+
+.upload-button:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(124, 58, 237, 0.3);
+}
+
+.upload-info {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0;
+}
+
+.upload-progress {
+    margin-top: 20px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background-color: var(--bg-tertiary);
     border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 10px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-    background: var(--border-color);
+.progress-fill {
+    height: 100%;
+    background-color: var(--primary-color);
+    width: 0%;
+    transition: width 0.3s ease;
 }
