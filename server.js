@@ -21,12 +21,41 @@ let userSessions = new Map();
 const uploadsDir = path.join(__dirname, 'uploads');
 const userDataDir = path.join(__dirname, 'user-data');
 const publicDir = path.join(__dirname, 'public');
+const usersFilePath = path.join(userDataDir, 'users.json');
 
 [uploadsDir, userDataDir, publicDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir);
     }
 });
+
+// Load users from file on startup
+function loadUsers() {
+    try {
+        if (fs.existsSync(usersFilePath)) {
+            const data = fs.readFileSync(usersFilePath, 'utf8');
+            users = JSON.parse(data);
+            console.log(`✓ Loaded ${users.length} users from storage`);
+        } else {
+            console.log('ℹ No existing user data found, starting fresh');
+        }
+    } catch (error) {
+        console.error('Error loading users:', error.message);
+        users = [];
+    }
+}
+
+// Save users to file
+function saveUsers() {
+    try {
+        fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
+    } catch (error) {
+        console.error('Error saving users:', error.message);
+    }
+}
+
+// Load users on startup
+loadUsers();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -161,6 +190,7 @@ app.post('/api/register', async (req, res) => {
         };
 
         users.push(user);
+        saveUsers();
         res.json({ success: true, message: 'Registration successful' });
     } catch (error) {
         console.error('Registration error:', error);
@@ -252,18 +282,89 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
 
         const allResults = [];
 
-        // Search Deezer API for full songs
+        // Search Free Music Archive for full-length songs (primary source)
+        try {
+            const fmaResponse = await axios.get('https://freemusicarchive.org/api/get/songs.json', {
+                params: {
+                    api_key: 'freemusicarchive',
+                    track_title_exact: query,
+                    limit: 25,
+                    with: ['artist', 'album']
+                },
+                timeout: 5000
+            });
+
+            const fmaSongs = (fmaResponse.data.data || [])
+                .filter(track => track.track_file_url && track.track_title)
+                .map(track => ({
+                    id: `fma_${track.id}`,
+                    title: track.track_title,
+                    artist: { name: track.artist?.artist_name || 'Artist' },
+                    album: {
+                        cover: track.album?.album_images?.[0]?.image || `https://via.placeholder.com/180?text=${encodeURIComponent(track.track_title.substring(0, 10))}`
+                    },
+                    preview: track.track_listen_url,
+                    url: track.track_file_url,
+                    duration: track.track_duration / 1000,
+                    source: 'fma',
+                    fullAvailable: true
+                }));
+
+            allResults.push(...fmaSongs);
+            console.log(`FMA search: ${fmaSongs.length} results for "${query}"`);
+        } catch (error) {
+            console.warn('FMA search error:', error.message);
+        }
+
+        // Fallback to broader FMA search
+        if (allResults.length === 0) {
+            try {
+                const fmaResponse = await axios.get('https://freemusicarchive.org/api/get/songs.json', {
+                    params: {
+                        api_key: 'freemusicarchive',
+                        limit: 25,
+                        with: ['artist', 'album'],
+                        sort: 'rating_recent'
+                    },
+                    timeout: 5000
+                });
+
+                const fmaSongs = (fmaResponse.data.data || [])
+                    .filter(track => track.track_file_url && track.track_title_lower?.includes(query.toLowerCase()))
+                    .slice(0, 20)
+                    .map(track => ({
+                        id: `fma_${track.id}`,
+                        title: track.track_title,
+                        artist: { name: track.artist?.artist_name || 'Artist' },
+                        album: {
+                            cover: track.album?.album_images?.[0]?.image || `https://via.placeholder.com/180?text=${encodeURIComponent(track.track_title.substring(0, 10))}`
+                        },
+                        preview: track.track_listen_url,
+                        url: track.track_file_url,
+                        duration: track.track_duration / 1000,
+                        source: 'fma',
+                        fullAvailable: true
+                    }));
+
+                allResults.push(...fmaSongs);
+            } catch (error) {
+                console.warn('FMA fallback error:', error.message);
+            }
+        }
+
+        // Search Deezer API as secondary source
         try {
             const deezerResponse = await axios.get('https://api.deezer.com/search', {
                 params: {
                     q: query,
-                    limit: 20,
+                    limit: 15,
                     output: 'json'
-                }
+                },
+                timeout: 5000
             });
 
-            const deezerSongs = deezerResponse.data.data
-                .filter(track => track.preview) // Ensure preview exists
+            const deezerSongs = (deezerResponse.data.data || [])
+                .filter(track => track.preview)
                 .map(track => ({
                     id: `deezer_${track.id}`,
                     title: track.title,
@@ -272,29 +373,31 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
                         cover: track.album.cover_medium || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}`
                     },
                     preview: track.preview,
+                    url: track.preview,
                     duration: track.duration,
                     source: 'deezer',
                     deezerUrl: track.link,
-                    fullAvailable: true // Deezer provides full streaming
+                    fullAvailable: false
                 }));
 
             allResults.push(...deezerSongs);
         } catch (error) {
-            console.error('Deezer search error:', error.message);
+            console.warn('Deezer search error:', error.message);
         }
 
-        // Search iTunes API for additional results
+        // Search iTunes API for additional results (30-second previews)
         try {
             const itunesResponse = await axios.get('https://itunes.apple.com/search', {
                 params: {
                     term: query,
                     media: 'music',
-                    limit: 15,
+                    limit: 10,
                     explicit: 'No'
-                }
+                },
+                timeout: 5000
             });
 
-            const itunesSongs = itunesResponse.data.results
+            const itunesSongs = (itunesResponse.data.results || [])
                 .filter(track => track.previewUrl)
                 .map(track => ({
                     id: `itunes_${track.trackId}`,
@@ -304,6 +407,7 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
                         cover: track.artworkUrl100?.replace('100x100', '256x256') || 'https://via.placeholder.com/180?text=Music'
                     },
                     preview: track.previewUrl,
+                    url: track.previewUrl,
                     duration: 30,
                     source: 'itunes',
                     fullAvailable: false
@@ -311,7 +415,7 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
 
             allResults.push(...itunesSongs);
         } catch (error) {
-            console.error('iTunes search error:', error.message);
+            console.warn('iTunes search error:', error.message);
         }
 
         // Search user's uploaded songs
@@ -335,6 +439,7 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
                         artist: { name: user ? user.username : 'Local Upload' },
                         album: { cover: 'https://via.placeholder.com/180?text=Upload' },
                         url: `/uploads/${filename}`,
+                        preview: `/uploads/${filename}`,
                         source: 'upload',
                         duration: 0,
                         fullAvailable: true,
@@ -344,7 +449,7 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
 
             allResults.push(...uploadedSongs);
         } catch (error) {
-            console.error('Upload search error:', error.message);
+            console.warn('Upload search error:', error.message);
         }
 
         // Remove duplicates and sort
@@ -368,35 +473,150 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
     }
 });
 
-// Get featured songs
-app.get('/api/featured', requireAPIAuth, async (req, res) => {
+// Get featured songs (no auth required for public content)
+app.get('/api/featured', async (req, res) => {
     try {
-        // Get trending songs from Deezer
-        const response = await axios.get('https://api.deezer.com/chart/0/tracks', {
+        // Use Free Music Archive API for full song streaming
+        const fmaResponse = await axios.get('https://freemusicarchive.org/api/get/songs.json', {
+            params: {
+                api_key: 'freemusicarchive',
+                limit: 30,
+                sort: 'rating_recent',
+                with: ['artist', 'album']
+            },
+            timeout: 5000
+        });
+
+        if (fmaResponse.data && fmaResponse.data.data && fmaResponse.data.data.length > 0) {
+            const songs = fmaResponse.data.data
+                .filter(track => track.track_file_url && track.track_title)
+                .slice(0, 20)
+                .map(track => ({
+                    id: `fma_${track.id}`,
+                    title: track.track_title,
+                    artist: { name: track.artist?.artist_name || 'Creative Commons Music' },
+                    album: {
+                        cover: track.album?.album_images?.[0]?.image || `https://via.placeholder.com/180?text=${encodeURIComponent(track.track_title.substring(0, 10))}`
+                    },
+                    preview: track.track_listen_url,
+                    url: track.track_file_url, // Full streaming URL
+                    duration: track.track_duration / 1000,
+                    source: 'fma',
+                    fullAvailable: true
+                }));
+
+            if (songs.length > 0) {
+                console.log(`✓ Free Music Archive: ${songs.length} featured tracks`);
+                return res.json({ data: songs });
+            }
+        }
+    } catch (error) {
+        console.warn('Free Music Archive API failed:', error.message);
+    }
+
+    try {
+        // Fallback to direct Creative Commons music provider
+        const ccResponse = await axios.get('https://api.deezer.com/playlist/8229404/tracks', {
             params: {
                 limit: 20,
                 output: 'json'
-            }
+            },
+            timeout: 5000
         });
 
-        const songs = response.data.data.map(track => ({
-            id: `deezer_${track.id}`,
-            title: track.title,
-            artist: { name: track.artist.name },
-            album: {
-                cover: track.album.cover_medium || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}`
-            },
-            preview: track.preview,
-            duration: track.duration,
-            source: 'deezer',
-            fullAvailable: true
-        }));
-
-        res.json({ data: songs });
+        if (ccResponse.data && ccResponse.data.data && ccResponse.data.data.length > 0) {
+            const songs = ccResponse.data.data
+                .filter(track => track.preview)
+                .map(track => ({
+                    id: `deezer_${track.id}`,
+                    title: track.title,
+                    artist: { name: track.artist.name },
+                    album: {
+                        cover: track.album.cover_medium || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}`
+                    },
+                    preview: track.preview,
+                    url: track.preview,
+                    duration: track.duration,
+                    source: 'deezer',
+                    fullAvailable: false
+                }));
+            console.log(`✓ Deezer: ${songs.length} featured tracks`);
+            return res.json({ data: songs });
+        }
     } catch (error) {
-        console.error('Featured error:', error.message);
-        res.json({ data: [] });
+        console.warn('Deezer API failed:', error.message);
     }
+
+    // Fallback sample with working links
+    const sampleSongs = [
+        {
+            id: 'sample_1',
+            title: 'Sunny Afternoon',
+            artist: { name: 'Kevin MacLeod' },
+            album: { cover: 'https://via.placeholder.com/180?text=Sunny' },
+            preview: 'https://incompetech.com/music/royalty-free/mp3-preview/Sunny%20Afternoon.mp3',
+            url: 'https://incompetech.com/music/royalty-free/mp3/Sunny%20Afternoon.mp3',
+            duration: 180,
+            source: 'cc',
+            fullAvailable: true
+        },
+        {
+            id: 'sample_2',
+            title: 'Carefree',
+            artist: { name: 'Kevin MacLeod' },
+            album: { cover: 'https://via.placeholder.com/180?text=Carefree' },
+            preview: 'https://incompetech.com/music/royalty-free/mp3-preview/Carefree.mp3',
+            url: 'https://incompetech.com/music/royalty-free/mp3/Carefree.mp3',
+            duration: 240,
+            source: 'cc',
+            fullAvailable: true
+        }
+    ];
+    console.log('⚠ Using Creative Commons sample music');
+    res.json({ data: sampleSongs });
+});
+            timeout: 5000
+        });
+
+        if (itunesResponse.data && itunesResponse.data.results && itunesResponse.data.results.length > 0) {
+            const songs = itunesResponse.data.results
+                .filter((track, idx) => idx < 20)
+                .map(track => ({
+                    id: `itunes_${track.trackId}`,
+                    title: track.trackName || 'Unknown',
+                    artist: { name: track.artistName || 'Unknown Artist' },
+                    album: {
+                        cover: track.artworkUrl100?.replace('100x100', '256x256') || 'https://via.placeholder.com/180?text=Music'
+                    },
+                    preview: track.previewUrl || '',
+                    url: track.previewUrl || '',
+                    duration: Math.floor((track.trackTimeMillis || 0) / 1000),
+                    source: 'itunes',
+                    fullAvailable: false
+                }));
+            console.log(`✓ iTunes: ${songs.length} featured tracks`);
+            return res.json({ data: songs });
+        }
+    } catch (error) {
+        console.warn('iTunes API failed:', error.message);
+    }
+
+    // Fallback sample with Jamendo music
+    const sampleSongs = [
+        {
+            id: 'jamendo_sample_1',
+            title: 'Ambient Study Music',
+            artist: { name: 'Free Music Archive' },
+            album: { cover: 'https://via.placeholder.com/180?text=Ambient' },
+            preview: 'https://mp3d.jamendo.com/?trackid=1234567&format=mp31',
+            url: 'https://mp3d.jamendo.com/?trackid=1234567&format=mp31',
+            duration: 300,
+            source: 'jamendo',
+            fullAvailable: true
+        }
+    ];
+    console.log('⚠ Using fallback music');
+    res.json({ data: sampleSongs });
 });
 
 // Upload music file
@@ -478,6 +698,27 @@ app.post('/api/play/:songId', requireAPIAuth, (req, res) => {
         user.stats.totalPlays++;
     }
     res.json({ success: true });
+});
+
+// DEBUG: Show all registered accounts
+app.get('/api/debug/accounts', (req, res) => {
+    const accounts = users.map(u => ({
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        createdAt: u.createdAt
+    }));
+    res.json({ 
+        totalAccounts: users.length,
+        accounts: accounts
+    });
+});
+
+// DEBUG: Clear all accounts (reset)
+app.post('/api/debug/reset', (req, res) => {
+    users = [];
+    saveUsers();
+    res.json({ message: 'All accounts cleared', totalAccounts: 0 });
 });
 
 // Start server

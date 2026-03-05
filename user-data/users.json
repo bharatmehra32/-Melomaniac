@@ -1,0 +1,19 @@
+[
+  {
+    "id": "bc16d0c8-7079-4f99-9924-645d9edb522c",
+    "username": "Owner 1",
+    "email": "bhmehra32@gmail.com",
+    "password": "$2a$10$XY7P.dELNVdtbzDqViXdquvmqqCfvjpwFYCDk/v5DTA8HlPGQJPUS",
+    "createdAt": "2026-03-05T10:05:27.834Z",
+    "profile": {
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Owner 1",
+      "bio": "",
+      "favoriteGenres": []
+    },
+    "stats": {
+      "songsUploaded": 0,
+      "totalPlays": 0,
+      "favoriteSongs": []
+    }
+  }
+]

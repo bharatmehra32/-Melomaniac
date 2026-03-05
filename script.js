@@ -196,9 +196,18 @@ function playTrack(track) {
     document.querySelector('.song-name').textContent = track.title || 'Unknown Track';
     
     // Add source info to artist name
-    const sourceIndicator = track.source === 'upload' ? 
-        '<i class="fas fa-hdd"></i> Full Song' : 
-        '<i class="fab fa-itunes-note"></i> Preview (30s)';
+    let sourceIndicator = '';
+    if (track.source === 'upload') {
+        sourceIndicator = '<i class="fas fa-hdd"></i> My Music (Full)';
+    } else if (track.source === 'jamendo') {
+        sourceIndicator = '<i class="fas fa-music"></i> Full Song';
+    } else if (track.source === 'deezer') {
+        sourceIndicator = '<i class="fab fa-deezer"></i> Preview';
+    } else if (track.source === 'itunes') {
+        sourceIndicator = '<i class="fab fa-itunes-note"></i> Preview (30s)';
+    } else {
+        sourceIndicator = '<span style="color: var(--primary-color); font-size: 10px;">Preview</span>';
+    }
     document.querySelector('.artist-name').innerHTML = `${track.artist?.name || 'Unknown Artist'} <span style="color: var(--primary-color); font-size: 10px;">${sourceIndicator}</span>`;
     
     const coverUrl = track.album?.cover || `https://via.placeholder.com/56?text=${encodeURIComponent((track.title || 'Music').substring(0, 2))}`;
