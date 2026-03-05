@@ -3,18 +3,30 @@ const path = require('path');
 const axios = require('axios');
 const multer = require('multer');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const session = require('express-session');
+const { v4: uuidv4 } = require('uuid');
+
 const app = express();
 const port = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'melomaniac-secret-key-2026';
+const DEEZER_APP_ID = process.env.DEEZER_APP_ID || 'your_deezer_app_id';
 
-// Simple password protection
-const PASSWORD = 'musicisprivacy'; // CHANGE THIS PASSWORD!
-const authorizedSessions = new Set();
+// In-memory user storage (in production, use a database)
+let users = [];
+let userSessions = new Map();
 
-// Create uploads directory if it doesn't exist
+// Create necessary directories
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);
-}
+const userDataDir = path.join(__dirname, 'user-data');
+const publicDir = path.join(__dirname, 'public');
+
+[uploadsDir, userDataDir, publicDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir);
+    }
+});
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -22,7 +34,6 @@ const storage = multer.diskStorage({
         cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
-        // Generate unique filename
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         cb(null, uniqueSuffix + path.extname(file.originalname));
     }
@@ -34,7 +45,6 @@ const upload = multer({
         fileSize: 50 * 1024 * 1024, // 50MB limit
     },
     fileFilter: (req, file, cb) => {
-        // Allow only audio files
         const allowedTypes = /mp3|wav|ogg|m4a|aac|flac/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
         const mimetype = allowedTypes.test(file.mimetype);
@@ -47,158 +57,193 @@ const upload = multer({
     }
 });
 
-// Middleware to protect routes
-app.use((req, res, next) => {
-    // Skip protection for API endpoints
-    if (req.path.startsWith('/api/')) {
-        return next();
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session configuration
+app.use(session({
+    secret: JWT_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: false,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
-    
-    // Skip protection for static assets
-    if (req.path.match(/\.(css|js|jpg|jpeg|png|gif|svg|ico)$/)) {
-        return next();
-    }
-    
-    // Always allow localhost
-    const host = req.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
-        return next();
-    }
-    
-    // Check for password in query
-    const pwd = req.query.pwd;
-    if (pwd === PASSWORD) {
-        authorizedSessions.add(req.ip);
-        return res.redirect(req.path);
-    }
-    
-    // Check if already authorized (same IP)
-    if (authorizedSessions.has(req.ip)) {
-        return next();
-    }
-    
-    // Show password screen
-    return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Melomaniac - Password</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    min-height: 100vh;
-                    font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
-                }
-                .container {
-                    background: white;
-                    padding: 50px 40px;
-                    border-radius: 15px;
-                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                    text-align: center;
-                    max-width: 400px;
-                    width: 90%;
-                }
-                .container h1 {
-                    color: #7c3aed;
-                    font-size: 36px;
-                    margin-bottom: 10px;
-                }
-                .container p {
-                    color: #666;
-                    font-size: 14px;
-                    margin-bottom: 30px;
-                    line-height: 1.5;
-                }
-                .form-group {
-                    margin-bottom: 20px;
-                }
-                .container input {
-                    width: 100%;
-                    padding: 14px;
-                    border: 2px solid #ddd;
-                    border-radius: 8px;
-                    font-size: 16px;
-                    transition: all 0.3s;
-                }
-                .container input:focus {
-                    outline: none;
-                    border-color: #7c3aed;
-                    box-shadow: 0 0 10px rgba(124, 58, 237, 0.2);
-                }
-                .container button {
-                    width: 100%;
-                    padding: 14px;
-                    background: #7c3aed;
-                    color: white;
-                    border: none;
-                    border-radius: 8px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    cursor: pointer;
-                    transition: all 0.3s;
-                }
-                .container button:hover {
-                    background: #6d28d9;
-                    transform: translateY(-2px);
-                    box-shadow: 0 10px 20px rgba(124, 58, 237, 0.3);
-                }
-                .container button:active {
-                    transform: translateY(0);
-                }
-                .info {
-                    margin-top: 20px;
-                    padding-top: 20px;
-                    border-top: 1px solid #eee;
-                    font-size: 12px;
-                    color: #999;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>🎵 Melomaniac</h1>
-                <p>This is a private music player.<br>Enter the password to continue:</p>
-                <form onsubmit="handleSubmit(event)">
-                    <div class="form-group">
-                        <input 
-                            type="password" 
-                            id="password" 
-                            placeholder="Enter password" 
-                            required 
-                            autofocus
-                            autocomplete="off"
-                        >
-                    </div>
-                    <button type="submit">🔓 Access Now</button>
-                </form>
-                <div class="info">
-                    This is a private instance.<br>
-                    Ask the owner for the password.
-                </div>
-            </div>
-            <script>
-                function handleSubmit(e) {
-                    e.preventDefault();
-                    const pwd = document.getElementById('password').value;
-                    window.location.href = '/?pwd=' + encodeURIComponent(pwd);
-                }
-            </script>
-        </body>
-        </html>
-    `);
-});
+}));
 
 // Serve static files
 app.use(express.static(path.join(__dirname)));
+app.use('/uploads', express.static(uploadsDir));
 
-// API endpoint - search songs (includes uploaded songs)
-app.get('/api/search', async (req, res) => {
+// Authentication middleware
+function requireAuth(req, res, next) {
+    if (req.session.userId) {
+        return next();
+    }
+    res.redirect('/login');
+}
+
+// API middleware for authenticated requests
+function requireAPIAuth(req, res, next) {
+    if (req.session.userId) {
+        req.userId = req.session.userId;
+        return next();
+    }
+    res.status(401).json({ error: 'Authentication required' });
+}
+
+// Routes
+
+// Login page
+app.get('/login', (req, res) => {
+    if (req.session.userId) {
+        return res.redirect('/');
+    }
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+// Register page
+app.get('/register', (req, res) => {
+    if (req.session.userId) {
+        return res.redirect('/');
+    }
+    res.sendFile(path.join(__dirname, 'register.html'));
+});
+
+// Profile page
+app.get('/profile', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'profile.html'));
+});
+
+// Main app (protected)
+app.get('/', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// API Routes
+
+// User registration
+app.post('/api/register', async (req, res) => {
+    try {
+        const { username, email, password } = req.body;
+
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        // Check if user exists
+        const existingUser = users.find(u => u.email === email || u.username === username);
+        if (existingUser) {
+            return res.status(400).json({ error: 'User already exists' });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create user
+        const user = {
+            id: uuidv4(),
+            username,
+            email,
+            password: hashedPassword,
+            createdAt: new Date().toISOString(),
+            profile: {
+                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`,
+                bio: '',
+                favoriteGenres: []
+            },
+            stats: {
+                songsUploaded: 0,
+                totalPlays: 0,
+                favoriteSongs: []
+            }
+        };
+
+        users.push(user);
+        res.json({ success: true, message: 'Registration successful' });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// User login
+app.post('/api/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        const user = users.find(u => u.email === email);
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Set session
+        req.session.userId = user.id;
+        req.session.username = user.username;
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                profile: user.profile
+            }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// User logout
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: 'Logout failed' });
+        }
+        res.json({ success: true });
+    });
+});
+
+// Get current user
+app.get('/api/user', requireAPIAuth, (req, res) => {
+    const user = users.find(u => u.id === req.userId);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        profile: user.profile,
+        stats: user.stats
+    });
+});
+
+// Update user profile
+app.put('/api/user/profile', requireAPIAuth, (req, res) => {
+    const user = users.find(u => u.id === req.userId);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { bio, favoriteGenres } = req.body;
+    user.profile.bio = bio || user.profile.bio;
+    user.profile.favoriteGenres = favoriteGenres || user.profile.favoriteGenres;
+
+    res.json({ success: true, profile: user.profile });
+});
+
+// Search songs (combines multiple sources)
+app.get('/api/search', requireAPIAuth, async (req, res) => {
     try {
         const query = req.query.q;
         if (!query) {
@@ -207,18 +252,49 @@ app.get('/api/search', async (req, res) => {
 
         const allResults = [];
 
-        // Search iTunes API for previews
+        // Search Deezer API for full songs
         try {
-            const response = await axios.get('https://itunes.apple.com/search', {
+            const deezerResponse = await axios.get('https://api.deezer.com/search', {
+                params: {
+                    q: query,
+                    limit: 20,
+                    output: 'json'
+                }
+            });
+
+            const deezerSongs = deezerResponse.data.data
+                .filter(track => track.preview) // Ensure preview exists
+                .map(track => ({
+                    id: `deezer_${track.id}`,
+                    title: track.title,
+                    artist: { name: track.artist.name },
+                    album: {
+                        cover: track.album.cover_medium || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}`
+                    },
+                    preview: track.preview,
+                    duration: track.duration,
+                    source: 'deezer',
+                    deezerUrl: track.link,
+                    fullAvailable: true // Deezer provides full streaming
+                }));
+
+            allResults.push(...deezerSongs);
+        } catch (error) {
+            console.error('Deezer search error:', error.message);
+        }
+
+        // Search iTunes API for additional results
+        try {
+            const itunesResponse = await axios.get('https://itunes.apple.com/search', {
                 params: {
                     term: query,
                     media: 'music',
-                    limit: 25,
+                    limit: 15,
                     explicit: 'No'
                 }
             });
 
-            const itunesSongs = response.data.results
+            const itunesSongs = itunesResponse.data.results
                 .filter(track => track.previewUrl)
                 .map(track => ({
                     id: `itunes_${track.trackId}`,
@@ -228,8 +304,9 @@ app.get('/api/search', async (req, res) => {
                         cover: track.artworkUrl100?.replace('100x100', '256x256') || 'https://via.placeholder.com/180?text=Music'
                     },
                     preview: track.previewUrl,
+                    duration: 30,
                     source: 'itunes',
-                    duration: 30 // Preview duration
+                    fullAvailable: false
                 }));
 
             allResults.push(...itunesSongs);
@@ -237,9 +314,10 @@ app.get('/api/search', async (req, res) => {
             console.error('iTunes search error:', error.message);
         }
 
-        // Search uploaded songs
+        // Search user's uploaded songs
         try {
             const files = fs.readdirSync(uploadsDir);
+            const user = users.find(u => u.id === req.userId);
             const uploadedSongs = files
                 .filter(file => /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file))
                 .filter(filename => {
@@ -254,13 +332,13 @@ app.get('/api/search', async (req, res) => {
                     return {
                         id: `upload_${filename}`,
                         title: filename.replace(/\.[^/.]+$/, ""),
-                        artist: { name: 'Local Upload' },
+                        artist: { name: user ? user.username : 'Local Upload' },
                         album: { cover: 'https://via.placeholder.com/180?text=Upload' },
                         url: `/uploads/${filename}`,
                         source: 'upload',
-                        duration: 0, // Full song
-                        uploadedAt: stats.mtime.toISOString(),
-                        size: stats.size
+                        duration: 0,
+                        fullAvailable: true,
+                        uploadedAt: stats.mtime.toISOString()
                     };
                 });
 
@@ -269,82 +347,81 @@ app.get('/api/search', async (req, res) => {
             console.error('Upload search error:', error.message);
         }
 
-        // Sort results: uploaded songs first, then iTunes
-        allResults.sort((a, b) => {
+        // Remove duplicates and sort
+        const uniqueResults = Array.from(
+            new Map(allResults.map(song => [song.id, song])).values()
+        );
+
+        // Sort: uploads first, then Deezer, then iTunes
+        uniqueResults.sort((a, b) => {
             if (a.source === 'upload' && b.source !== 'upload') return -1;
             if (a.source !== 'upload' && b.source === 'upload') return 1;
+            if (a.source === 'deezer' && b.source === 'itunes') return -1;
+            if (a.source === 'itunes' && b.source === 'deezer') return 1;
             return 0;
         });
 
-        res.json({ data: allResults });
+        res.json({ data: uniqueResults });
     } catch (error) {
         console.error('Search error:', error.message);
         res.json({ data: [] });
     }
 });
 
-// API endpoint - featured songs
-app.get('/api/featured', async (req, res) => {
+// Get featured songs
+app.get('/api/featured', requireAPIAuth, async (req, res) => {
     try {
-        const queries = ['popular', 'trending', 'top 40'];
-        const allSongs = [];
-
-        for (const query of queries) {
-            if (allSongs.length >= 20) break;
-            try {
-                const response = await axios.get('https://itunes.apple.com/search', {
-                    params: {
-                        term: query,
-                        media: 'music',
-                        limit: 10,
-                        explicit: 'No'
-                    }
-                });
-
-                const songs = response.data.results
-                    .filter(track => track.previewUrl)
-                    .map(track => ({
-                        id: track.trackId,
-                        title: track.trackName,
-                        artist: { name: track.artistName },
-                        album: { 
-                            cover: track.artworkUrl100?.replace('100x100', '256x256') || 'https://via.placeholder.com/180?text=Music'
-                        },
-                        preview: track.previewUrl
-                    }));
-
-                allSongs.push(...songs);
-            } catch (e) {
-                console.error(`Error fetching ${query}:`, e.message);
+        // Get trending songs from Deezer
+        const response = await axios.get('https://api.deezer.com/chart/0/tracks', {
+            params: {
+                limit: 20,
+                output: 'json'
             }
-        }
+        });
 
-        const uniqueSongs = Array.from(
-            new Map(allSongs.map(song => [song.id, song])).values()
-        );
+        const songs = response.data.data.map(track => ({
+            id: `deezer_${track.id}`,
+            title: track.title,
+            artist: { name: track.artist.name },
+            album: {
+                cover: track.album.cover_medium || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}`
+            },
+            preview: track.preview,
+            duration: track.duration,
+            source: 'deezer',
+            fullAvailable: true
+        }));
 
-        res.json({ data: uniqueSongs.slice(0, 20) });
+        res.json({ data: songs });
     } catch (error) {
         console.error('Featured error:', error.message);
         res.json({ data: [] });
     }
 });
 
-// API endpoint - upload music file
-app.post('/api/upload', upload.single('music'), (req, res) => {
+// Upload music file
+app.post('/api/upload', requireAPIAuth, upload.single('music'), (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
+        const user = users.find(u => u.id === req.userId);
+        if (user) {
+            user.stats.songsUploaded++;
+        }
+
         const fileInfo = {
             id: req.file.filename,
-            title: req.file.originalname.replace(/\.[^/.]+$/, ""), // Remove extension
-            artist: { name: 'Local Upload' },
+            title: req.file.originalname.replace(/\.[^/.]+$/, ""),
+            artist: { name: user ? user.username : 'Local Upload' },
             album: { cover: 'https://via.placeholder.com/180?text=Upload' },
             url: `/uploads/${req.file.filename}`,
-            duration: 0, // Will be determined by client
-            uploadedAt: new Date().toISOString()
+            source: 'upload',
+            duration: 0,
+            fullAvailable: true,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: req.userId
         };
 
         res.json({ success: true, file: fileInfo });
@@ -354,37 +431,54 @@ app.post('/api/upload', upload.single('music'), (req, res) => {
     }
 });
 
-// API endpoint - get uploaded songs
-app.get('/api/my-music', (req, res) => {
+// Get user's uploaded music
+app.get('/api/my-music', requireAPIAuth, (req, res) => {
     try {
         const files = fs.readdirSync(uploadsDir);
-        const songs = files
+        const userSongs = files
             .filter(file => /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file))
             .map(filename => {
                 const filePath = path.join(uploadsDir, filename);
                 const stats = fs.statSync(filePath);
-                
+
                 return {
                     id: filename,
                     title: filename.replace(/\.[^/.]+$/, ""),
-                    artist: { name: 'Local Upload' },
+                    artist: { name: 'Your Upload' },
                     album: { cover: 'https://via.placeholder.com/180?text=Upload' },
                     url: `/uploads/${filename}`,
+                    source: 'upload',
                     duration: 0,
-                    uploadedAt: stats.mtime.toISOString(),
-                    size: stats.size
+                    fullAvailable: true,
+                    uploadedAt: stats.mtime.toISOString()
                 };
             });
 
-        res.json({ data: songs });
+        res.json({ data: userSongs });
     } catch (error) {
         console.error('My music error:', error);
         res.json({ data: [] });
     }
 });
 
-// Serve uploaded files
-app.use('/uploads', express.static(uploadsDir));
+// Get user stats
+app.get('/api/stats', requireAPIAuth, (req, res) => {
+    const user = users.find(u => u.id === req.userId);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(user.stats);
+});
+
+// Update play count
+app.post('/api/play/:songId', requireAPIAuth, (req, res) => {
+    const user = users.find(u => u.id === req.userId);
+    if (user) {
+        user.stats.totalPlays++;
+    }
+    res.json({ success: true });
+});
 
 // Start server
 app.listen(port, () => {
@@ -392,7 +486,11 @@ app.listen(port, () => {
     console.log(`║  🎵 Melomaniac Music Streaming App   ║`);
     console.log(`╚════════════════════════════════════════╝\n`);
     console.log(`🌐 Localhost:  http://localhost:${port}\n`);
-    console.log(`🔐 Password: ${PASSWORD}`);
-    console.log(`   (Share your public tunnel URL with others)`);
-    console.log(`   (They'll need to enter this password)\n`);
+    console.log(`🔐 Registration: http://localhost:${port}/register`);
+    console.log(`   Login: http://localhost:${port}/login\n`);
+    console.log(`📱 Features:`);
+    console.log(`   • User accounts & profiles`);
+    console.log(`   • Full song streaming (Deezer integration)`);
+    console.log(`   • Personal music uploads`);
+    console.log(`   • Social features & stats\n`);
 });

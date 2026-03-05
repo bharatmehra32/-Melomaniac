@@ -18,6 +18,7 @@ const musicUpload = document.getElementById('music-upload');
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     console.log('App initialized');
+    loadUserInfo();
     setupTabNavigation();
     setupPlayerControls();
     setupUploadFunctionality();
@@ -491,4 +492,38 @@ function displayMyMusic(songs) {
             }
         }
     });
+}
+
+// Load user information
+async function loadUserInfo() {
+    try {
+        const response = await fetch('/api/user');
+        const user = await response.json();
+
+        const userInfoDiv = document.getElementById('user-info');
+        if (userInfoDiv) {
+            userInfoDiv.innerHTML = `
+                <img src="${user.profile.avatar}" alt="Avatar" class="user-avatar">
+                <div class="user-details">
+                    <div class="user-name">${user.username}</div>
+                    <div class="user-email">${user.email}</div>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading user info:', error);
+        // Redirect to login if not authenticated
+        window.location.href = '/login';
+    }
+}
+
+// Logout function
+async function logout() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+    } catch (error) {
+        console.error('Logout error:', error);
+        window.location.href = '/login';
+    }
 }

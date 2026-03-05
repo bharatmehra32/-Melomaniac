@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Melomaniac</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .profile-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .profile-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .profile-info h1 {
+            margin-bottom: 5px;
+            font-size: 24px;
+        }
+
+        .profile-info p {
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .profile-stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .profile-content {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+        }
+
+        .profile-main {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .profile-sidebar {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            height: fit-content;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .genre-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .genre-tag {
+            background: var(--primary-color);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .genre-tag .remove {
+            cursor: pointer;
+            opacity: 0.7;
+        }
+
+        .genre-tag .remove:hover {
+            opacity: 1;
+        }
+
+        .add-genre {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .add-genre input {
+            flex: 1;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+        }
+
+        .add-genre button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-save {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-save:hover {
+            background: var(--primary-dark);
+        }
+
+        .recent-activity {
+            margin-top: 20px;
+        }
+
+        .activity-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .activity-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-content .title {
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .activity-content .meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .logout-btn {
+            width: 100%;
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="profile-container">
+        <div class="profile-header" id="profile-header">
+            <!-- Profile info will be loaded here -->
+        </div>
+
+        <div class="profile-content">
+            <div class="profile-main">
+                <div class="section">
+                    <h2 class="section-title">
+                        <i class="fas fa-user-edit"></i>
+                        Edit Profile
+                    </h2>
+
+                    <form id="profile-form">
+                        <div class="form-group">
+                            <label for="bio">Bio</label>
+                            <textarea id="bio" placeholder="Tell us about yourself and your music taste..."></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Favorite Genres</label>
+                            <div class="genre-tags" id="genre-tags">
+                                <!-- Genre tags will be loaded here -->
+                            </div>
+                            <div class="add-genre">
+                                <input type="text" id="new-genre" placeholder="Add a genre...">
+                                <button type="button" id="add-genre-btn">Add</button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-save">
+                            <i class="fas fa-save"></i> Save Changes
+                        </button>
+                    </form>
+                </div>
+
+                <div class="recent-activity">
+                    <h2 class="section-title">
+                        <i class="fas fa-history"></i>
+                        Recent Activity
+                    </h2>
+                    <div id="recent-activity">
+                        <!-- Activity will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="profile-sidebar">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-bar"></i>
+                    Your Stats
+                </h2>
+                <div id="user-stats">
+                    <!-- Stats will be loaded here -->
+                </div>
+
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+
+        // Load user profile
+        async function loadProfile() {
+            try {
+                const [userResponse, statsResponse] = await Promise.all([
+                    fetch('/api/user'),
+                    fetch('/api/stats')
+                ]);
+
+                const user = await userResponse.json();
+                const stats = await statsResponse.json();
+
+                currentUser = user;
+
+                // Update profile header
+                document.getElementById('profile-header').innerHTML = `
+                    <img src="${user.profile.avatar}" alt="Avatar" class="profile-avatar">
+                    <div class="profile-info">
+                        <h1>${user.username}</h1>
+                        <p>${user.email}</p>
+                        <div class="profile-stats">
+                            <div class="stat">
+                                <div class="stat-number">${stats.songsUploaded || 0}</div>
+                                <div class="stat-label">Songs Uploaded</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-number">${stats.totalPlays || 0}</div>
+                                <div class="stat-label">Total Plays</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-number">${stats.favoriteSongs?.length || 0}</div>
+                                <div class="stat-label">Favorites</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Fill form
+                document.getElementById('bio').value = user.profile.bio || '';
+
+                // Load genres
+                loadGenres(user.profile.favoriteGenres || []);
+
+                // Load stats
+                document.getElementById('user-stats').innerHTML = `
+                    <div class="stat">
+                        <div class="stat-number">${stats.songsUploaded || 0}</div>
+                        <div class="stat-label">Songs Uploaded</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${stats.totalPlays || 0}</div>
+                        <div class="stat-label">Total Plays</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${stats.favoriteSongs?.length || 0}</div>
+                        <div class="stat-label">Favorites</div>
+                    </div>
+                `;
+
+                // Load recent activity (mock data for now)
+                loadRecentActivity();
+
+            } catch (error) {
+                console.error('Error loading profile:', error);
+                window.location.href = '/login';
+            }
+        }
+
+        function loadGenres(genres) {
+            const container = document.getElementById('genre-tags');
+            container.innerHTML = '';
+
+            genres.forEach(genre => {
+                const tag = document.createElement('div');
+                tag.className = 'genre-tag';
+                tag.innerHTML = `
+                    ${genre}
+                    <span class="remove" onclick="removeGenre('${genre}')">×</span>
+                `;
+                container.appendChild(tag);
+            });
+        }
+
+        function loadRecentActivity() {
+            const activities = [
+                { icon: 'fas fa-upload', title: 'Uploaded new song', meta: '2 hours ago' },
+                { icon: 'fas fa-play', title: 'Played "Bohemian Rhapsody"', meta: '5 hours ago' },
+                { icon: 'fas fa-heart', title: 'Added to favorites', meta: '1 day ago' },
+                { icon: 'fas fa-search', title: 'Searched for "rock music"', meta: '2 days ago' }
+            ];
+
+            const container = document.getElementById('recent-activity');
+            container.innerHTML = '';
+
+            activities.forEach(activity => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.innerHTML = `
+                    <div class="activity-icon">
+                        <i class="${activity.icon}"></i>
+                    </div>
+                    <div class="activity-content">
+                        <div class="title">${activity.title}</div>
+                        <div class="meta">${activity.meta}</div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // Add genre
+        document.getElementById('add-genre-btn').addEventListener('click', () => {
+            const input = document.getElementById('new-genre');
+            const genre = input.value.trim();
+
+            if (genre && currentUser) {
+                if (!currentUser.profile.favoriteGenres) {
+                    currentUser.profile.favoriteGenres = [];
+                }
+
+                if (!currentUser.profile.favoriteGenres.includes(genre)) {
+                    currentUser.profile.favoriteGenres.push(genre);
+                    loadGenres(currentUser.profile.favoriteGenres);
+                    input.value = '';
+                }
+            }
+        });
+
+        // Remove genre
+        function removeGenre(genre) {
+            if (currentUser && currentUser.profile.favoriteGenres) {
+                currentUser.profile.favoriteGenres = currentUser.profile.favoriteGenres.filter(g => g !== genre);
+                loadGenres(currentUser.profile.favoriteGenres);
+            }
+        }
+
+        // Save profile
+        document.getElementById('profile-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const bio = document.getElementById('bio').value;
+            const favoriteGenres = currentUser.profile.favoriteGenres || [];
+
+            try {
+                const response = await fetch('/api/user/profile', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ bio, favoriteGenres }),
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('Profile updated successfully!');
+                } else {
+                    alert('Failed to update profile');
+                }
+            } catch (error) {
+                console.error('Error updating profile:', error);
+                alert('Error updating profile');
+            }
+        });
+
+        // Logout
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (error) {
+                console.error('Logout error:', error);
+                window.location.href = '/login';
+            }
+        }
+
+        // Load profile on page load
+        loadProfile();
+    </script>
+</body>
+</html>
