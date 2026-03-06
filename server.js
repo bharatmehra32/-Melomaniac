@@ -7,6 +7,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const session = require('express-session');
 const { v4: uuidv4 } = require('uuid');
+const { searchSong } = require('./youtube_api');
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -276,26 +278,33 @@ app.put('/api/user/profile', requireAPIAuth, (req, res) => {
 app.get('/api/search', requireAPIAuth, async (req, res) => {
     try {
         const query = req.query.q;
+
         if (!query) {
             return res.json({ data: [] });
         }
 
-        const allResults = [];
+        let allResults = [];
 
-        // Search Free Music Archive for full-length songs (primary source)
+        // Search Free Music Archive API
         try {
             const fmaResponse = await axios.get('https://freemusicarchive.org/api/get/songs.json', {
                 params: {
                     api_key: 'freemusicarchive',
-                    track_title_exact: query,
                     limit: 25,
-                    with: ['artist', 'album']
+                    with: ['artist', 'album'],
+                    sort: 'rating_recent'
                 },
-                timeout: 5000
+                timeout: 8000
             });
 
             const fmaSongs = (fmaResponse.data.data || [])
                 .filter(track => track.track_file_url && track.track_title)
+                .filter(track => {
+                    const searchLower = query.toLowerCase();
+                    return track.track_title_lower?.includes(searchLower) || 
+                           track.artist?.artist_name?.toLowerCase().includes(searchLower);
+                })
+                .slice(0, 15)
                 .map(track => ({
                     id: `fma_${track.id}`,
                     title: track.track_title,
@@ -311,53 +320,88 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
                 }));
 
             allResults.push(...fmaSongs);
-            console.log(`FMA search: ${fmaSongs.length} results for "${query}"`);
         } catch (error) {
-            console.warn('FMA search error:', error.message);
+            console.warn("FMA search error:", error.message);
         }
 
-        // Fallback to broader FMA search
-        if (allResults.length === 0) {
-            try {
-                const fmaResponse = await axios.get('https://freemusicarchive.org/api/get/songs.json', {
-                    params: {
-                        api_key: 'freemusicarchive',
-                        limit: 25,
-                        with: ['artist', 'album'],
-                        sort: 'rating_recent'
-                    },
-                    timeout: 5000
-                });
+        // Search Jamendo API (full streaming)
+        try {
+            const jamendoResponse = await axios.get('https://api.jamendo.com/v3.0/tracks', {
+                params: {
+                    client_id: '23c46d76',
+                    format: 'json',
+                    limit: 20,
+                    order: 'popularity_total',
+                    include: 'musicinfo',
+                    search: query
+                },
+                timeout: 8000
+            });
 
-                const fmaSongs = (fmaResponse.data.data || [])
-                    .filter(track => track.track_file_url && track.track_title_lower?.includes(query.toLowerCase()))
-                    .slice(0, 20)
-                    .map(track => ({
-                        id: `fma_${track.id}`,
-                        title: track.track_title,
-                        artist: { name: track.artist?.artist_name || 'Artist' },
+            const jamendoSongs = (jamendoResponse.data.results || [])
+                .filter(track => track.audio && track.name)
+                .map(track => ({
+                    id: `jamendo_${track.id}`,
+                    title: track.name,
+                    artist: { name: track.artist_name },
+                    album: {
+                        cover: track.image || `https://via.placeholder.com/180?text=${encodeURIComponent(track.name.substring(0, 10))}`
+                    },
+                    preview: track.audio,
+                    url: track.audio,
+                    duration: parseInt(track.duration) || 180,
+                    source: 'jamendo',
+                    fullAvailable: true,
+                    license: track.musicinfo?.license?.title || 'CC BY'
+                }));
+
+            allResults.push(...jamendoSongs);
+        } catch (error) {
+            console.warn('Jamendo search error:', error.message);
+        }
+
+        // Search Archive.org for free music
+        try {
+            const archiveResponse = await axios.get('https://archive.org/advancedsearch.php', {
+                params: {
+                    q: `${query} AND mediatype:audio`,
+                    fl: 'identifier,title,creator',
+                    sort: 'downloads desc',
+                    rows: 15,
+                    output: 'json'
+                },
+                timeout: 8000
+            });
+
+            if (archiveResponse.data && archiveResponse.data.response && archiveResponse.data.response.docs) {
+                const archiveSongs = archiveResponse.data.response.docs
+                    .filter(item => item.title)
+                    .map(item => ({
+                        id: `archive_${item.identifier}`,
+                        title: item.title,
+                        artist: { name: item.creator || 'Internet Archive' },
                         album: {
-                            cover: track.album?.album_images?.[0]?.image || `https://via.placeholder.com/180?text=${encodeURIComponent(track.track_title.substring(0, 10))}`
+                            cover: `https://archive.org/services/img/${item.identifier}` || 'https://via.placeholder.com/180?text=Archive'
                         },
-                        preview: track.track_listen_url,
-                        url: track.track_file_url,
-                        duration: track.track_duration / 1000,
-                        source: 'fma',
+                        preview: `https://archive.org/download/${item.identifier}/${item.identifier}_vbr.mp3`,
+                        url: `https://archive.org/download/${item.identifier}/${item.identifier}_vbr.mp3`,
+                        duration: 0,
+                        source: 'archive',
                         fullAvailable: true
                     }));
 
-                allResults.push(...fmaSongs);
-            } catch (error) {
-                console.warn('FMA fallback error:', error.message);
+                allResults.push(...archiveSongs);
             }
+        } catch (error) {
+            console.warn('Archive.org search error:', error.message);
         }
 
-        // Search Deezer API as secondary source
+        // Search Deezer API (30-second previews only)
         try {
             const deezerResponse = await axios.get('https://api.deezer.com/search', {
                 params: {
                     q: query,
-                    limit: 15,
+                    limit: 10,
                     output: 'json'
                 },
                 timeout: 5000
@@ -385,7 +429,7 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
             console.warn('Deezer search error:', error.message);
         }
 
-        // Search iTunes API for additional results (30-second previews)
+        // Search iTunes API (30-second previews only)
         try {
             const itunesResponse = await axios.get('https://itunes.apple.com/search', {
                 params: {
@@ -452,18 +496,65 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
             console.warn('Upload search error:', error.message);
         }
 
-        // Remove duplicates and sort
+        // Add reliable sample songs as fallback for full streaming
+        // These work even when external APIs fail
+        const searchQuery = query.toLowerCase();
+        const sampleSongsSearch = [
+            { title: 'Sunny Afternoon', artist: 'Kevin MacLeod', keyword: 'sunny' },
+            { title: 'Carefree', artist: 'Kevin MacLeod', keyword: 'carefree' },
+            { title: 'The Lift', artist: 'Kevin MacLeod', keyword: 'lift' },
+            { title: 'Figtop', artist: 'Kevin MacLeod', keyword: 'figtop' },
+            { title: 'Fluffing a Duck', artist: 'Kevin MacLeod', keyword: 'duck' },
+            { title: 'Gymnopedie No. 1', artist: 'Kevin MacLeod', keyword: 'gymnopedie' },
+            { title: 'Impact Intermezzo', artist: 'Kevin MacLeod', keyword: 'impact' },
+            { title: 'Latino', artist: 'Kevin MacLeod', keyword: 'latino' }
+        ];
+
+        const matchingSamples = sampleSongsSearch.filter(s => 
+            s.title.toLowerCase().includes(searchQuery) || 
+            s.artist.toLowerCase().includes(searchQuery) ||
+            s.keyword.includes(searchQuery)
+        );
+
+        matchingSamples.forEach(s => {
+            allResults.push({
+                id: `sample_${s.keyword}`,
+                title: s.title,
+                artist: { name: s.artist },
+                album: { cover: `https://via.placeholder.com/180?text=${encodeURIComponent(s.title.substring(0, 10))}` },
+                preview: `https://incompetech.com/music/royalty-free/mp3-royalty-free/${encodeURIComponent(s.title)}.mp3`,
+                url: `https://incompetech.com/music/royalty-free/mp3-royalty-free/${encodeURIComponent(s.title)}.mp3`,
+                duration: 180,
+                source: 'cc',
+                fullAvailable: true
+            });
+        });
+
+        // Remove duplicates
         const uniqueResults = Array.from(
             new Map(allResults.map(song => [song.id, song])).values()
         );
 
-        // Sort: uploads first, then Deezer, then iTunes
+        // Sort: prioritize full-length sources first, then by source quality
+        // Priority: upload > fma > jamendo > archive > deezer > itunes
+        const sourcePriority = {
+            'upload': 1,
+            'fma': 2,
+            'jamendo': 3,
+            'archive': 4,
+            'deezer': 5,
+            'itunes': 6
+        };
+
         uniqueResults.sort((a, b) => {
-            if (a.source === 'upload' && b.source !== 'upload') return -1;
-            if (a.source !== 'upload' && b.source === 'upload') return 1;
-            if (a.source === 'deezer' && b.source === 'itunes') return -1;
-            if (a.source === 'itunes' && b.source === 'deezer') return 1;
-            return 0;
+            // First: prioritize full songs over previews
+            if (a.fullAvailable !== b.fullAvailable) {
+                return a.fullAvailable ? -1 : 1;
+            }
+            // Second: sort by source priority
+            const aPriority = sourcePriority[a.source] || 99;
+            const bPriority = sourcePriority[b.source] || 99;
+            return aPriority - bPriority;
         });
 
         res.json({ data: uniqueResults });
@@ -473,150 +564,114 @@ app.get('/api/search', requireAPIAuth, async (req, res) => {
     }
 });
 
-// Get featured songs (no auth required for public content)
+// Get featured songs - PRIORITIZING TAYLOR SWIFT AND POPULAR ARTISTS (OPTIMIZED)
 app.get('/api/featured', async (req, res) => {
-    try {
-        // Use Free Music Archive API for full song streaming
-        const fmaResponse = await axios.get('https://freemusicarchive.org/api/get/songs.json', {
-            params: {
-                api_key: 'freemusicarchive',
-                limit: 30,
-                sort: 'rating_recent',
-                with: ['artist', 'album']
-            },
+    let allSongs = [];
+    let popularSongs = [];
+    
+    // 1. FIRST: Add Taylor Swift and top popular artists from Deezer (30-second previews) - REDUCED for speed
+    const popularArtists = [
+        'Taylor Swift', 'The Weeknd', 'Drake', 'Billie Eilish', 
+        'Ed Sheeran', 'Dua Lipa', 'Ariana Grande', 'Harry Styles'
+    ];
+    
+    // Fetch all artists in parallel for speed
+    const deezerPromises = popularArtists.map(artist => 
+        axios.get('https://api.deezer.com/search', {
+            params: { q: artist, limit: 10, output: 'json' },
             timeout: 5000
-        });
-
-        if (fmaResponse.data && fmaResponse.data.data && fmaResponse.data.data.length > 0) {
-            const songs = fmaResponse.data.data
-                .filter(track => track.track_file_url && track.track_title)
-                .slice(0, 20)
-                .map(track => ({
-                    id: `fma_${track.id}`,
-                    title: track.track_title,
-                    artist: { name: track.artist?.artist_name || 'Creative Commons Music' },
-                    album: {
-                        cover: track.album?.album_images?.[0]?.image || `https://via.placeholder.com/180?text=${encodeURIComponent(track.track_title.substring(0, 10))}`
-                    },
-                    preview: track.track_listen_url,
-                    url: track.track_file_url, // Full streaming URL
-                    duration: track.track_duration / 1000,
-                    source: 'fma',
-                    fullAvailable: true
-                }));
-
-            if (songs.length > 0) {
-                console.log(`✓ Free Music Archive: ${songs.length} featured tracks`);
-                return res.json({ data: songs });
-            }
-        }
-    } catch (error) {
-        console.warn('Free Music Archive API failed:', error.message);
-    }
-
-    try {
-        // Fallback to direct Creative Commons music provider
-        const ccResponse = await axios.get('https://api.deezer.com/playlist/8229404/tracks', {
-            params: {
-                limit: 20,
-                output: 'json'
-            },
-            timeout: 5000
-        });
-
-        if (ccResponse.data && ccResponse.data.data && ccResponse.data.data.length > 0) {
-            const songs = ccResponse.data.data
+        }).then(response => {
+            const songs = (response.data.data || [])
                 .filter(track => track.preview)
+                .slice(0, 5)
                 .map(track => ({
                     id: `deezer_${track.id}`,
                     title: track.title,
                     artist: { name: track.artist.name },
-                    album: {
-                        cover: track.album.cover_medium || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}`
-                    },
+                    album: { cover: track.album.cover_medium || track.album.cover || `https://via.placeholder.com/180?text=${encodeURIComponent(track.title.substring(0, 10))}` },
                     preview: track.preview,
                     url: track.preview,
                     duration: track.duration,
                     source: 'deezer',
-                    fullAvailable: false
+                    deezerUrl: track.link,
+                    fullAvailable: false,
+                    isPopular: true
                 }));
-            console.log(`✓ Deezer: ${songs.length} featured tracks`);
-            return res.json({ data: songs });
-        }
-    } catch (error) {
-        console.warn('Deezer API failed:', error.message);
-    }
-
-    // Fallback sample with working links
-    const sampleSongs = [
-        {
-            id: 'sample_1',
-            title: 'Sunny Afternoon',
-            artist: { name: 'Kevin MacLeod' },
-            album: { cover: 'https://via.placeholder.com/180?text=Sunny' },
-            preview: 'https://incompetech.com/music/royalty-free/mp3-preview/Sunny%20Afternoon.mp3',
-            url: 'https://incompetech.com/music/royalty-free/mp3/Sunny%20Afternoon.mp3',
-            duration: 180,
-            source: 'cc',
-            fullAvailable: true
-        },
-        {
-            id: 'sample_2',
-            title: 'Carefree',
-            artist: { name: 'Kevin MacLeod' },
-            album: { cover: 'https://via.placeholder.com/180?text=Carefree' },
-            preview: 'https://incompetech.com/music/royalty-free/mp3-preview/Carefree.mp3',
-            url: 'https://incompetech.com/music/royalty-free/mp3/Carefree.mp3',
-            duration: 240,
-            source: 'cc',
-            fullAvailable: true
-        }
-    ];
-    console.log('⚠ Using Creative Commons sample music');
-    res.json({ data: sampleSongs });
-});
+            return songs;
+        }).catch(error => {
+            console.warn(`Deezer API failed for ${artist}:`, error.message);
+            return [];
+        })
+    );
+    
+    const deezerResults = await Promise.all(deezerPromises);
+    deezerResults.forEach(songs => popularSongs.push(...songs));
+    
+    // 2. Also add iTunes for top 4 artists - parallel
+    const itunesArtists = ['Taylor Swift', 'The Weeknd', 'Drake', 'Ed Sheeran'];
+    const itunesPromises = itunesArtists.map(artist => 
+        axios.get('https://itunes.apple.com/search', {
+            params: { term: artist, media: 'music', limit: 8, explicit: 'No' },
             timeout: 5000
-        });
-
-        if (itunesResponse.data && itunesResponse.data.results && itunesResponse.data.results.length > 0) {
-            const songs = itunesResponse.data.results
-                .filter((track, idx) => idx < 20)
+        }).then(response => {
+            const songs = (response.data.results || [])
+                .filter(track => track.previewUrl)
+                .slice(0, 5)
                 .map(track => ({
                     id: `itunes_${track.trackId}`,
-                    title: track.trackName || 'Unknown',
-                    artist: { name: track.artistName || 'Unknown Artist' },
-                    album: {
-                        cover: track.artworkUrl100?.replace('100x100', '256x256') || 'https://via.placeholder.com/180?text=Music'
-                    },
-                    preview: track.previewUrl || '',
-                    url: track.previewUrl || '',
-                    duration: Math.floor((track.trackTimeMillis || 0) / 1000),
+                    title: track.trackName,
+                    artist: { name: track.artistName },
+                    album: { cover: track.artworkUrl100?.replace('100x100', '256x256') || 'https://via.placeholder.com/180?text=Music' },
+                    preview: track.previewUrl,
+                    url: track.previewUrl,
+                    duration: 30,
                     source: 'itunes',
-                    fullAvailable: false
+                    fullAvailable: false,
+                    isPopular: true
                 }));
-            console.log(`✓ iTunes: ${songs.length} featured tracks`);
-            return res.json({ data: songs });
-        }
-    } catch (error) {
-        console.warn('iTunes API failed:', error.message);
-    }
-
-    // Fallback sample with Jamendo music
+            return songs;
+        }).catch(error => {
+            console.warn(`iTunes API failed for ${artist}:`, error.message);
+            return [];
+        })
+    );
+    
+    const itunesResults = await Promise.all(itunesPromises);
+    itunesResults.forEach(songs => popularSongs.push(...songs));
+    
+    // 3. Add sample CC songs as reliable fallback - no API call needed
     const sampleSongs = [
-        {
-            id: 'jamendo_sample_1',
-            title: 'Ambient Study Music',
-            artist: { name: 'Free Music Archive' },
-            album: { cover: 'https://via.placeholder.com/180?text=Ambient' },
-            preview: 'https://mp3d.jamendo.com/?trackid=1234567&format=mp31',
-            url: 'https://mp3d.jamendo.com/?trackid=1234567&format=mp31',
-            duration: 300,
-            source: 'jamendo',
-            fullAvailable: true
-        }
+        { title: 'Sunny Afternoon', artist: 'Kevin MacLeod' },
+        { title: 'Carefree', artist: 'Kevin MacLeod' },
+        { title: 'The Lift', artist: 'Kevin MacLeod' },
+        { title: 'Fluffing a Duck', artist: 'Kevin MacLeod' },
+        { title: 'Gymnopedie No. 1', artist: 'Kevin MacLeod' }
     ];
-    console.log('⚠ Using fallback music');
-    res.json({ data: sampleSongs });
+    
+    sampleSongs.forEach((s, i) => {
+        allSongs.push({
+            id: `sample_${i}`,
+            title: s.title,
+            artist: { name: s.artist },
+            album: { cover: `https://via.placeholder.com/180?text=${encodeURIComponent(s.title.substring(0, 10))}` },
+            preview: `https://incompetech.com/music/royalty-free/mp3-royalty-free/${encodeURIComponent(s.title)}.mp3`,
+            url: `https://incompetech.com/music/royalty-free/mp3-royalty-free/${encodeURIComponent(s.title)}.mp3`,
+            duration: 180,
+            source: 'cc',
+            fullAvailable: true,
+            isPopular: false
+        });
+    });
+
+    // Remove duplicates
+    const uniquePopular = Array.from(new Map(popularSongs.map(song => [song.id, song])).values());
+    const uniqueAll = Array.from(new Map(allSongs.map(song => [song.id, song])).values());
+    
+    // Combine: popular artists first, then other music
+    const finalSongs = [...uniquePopular, ...uniqueAll];
+    
+    console.log(`✓ Total featured tracks: ${finalSongs.length} (${uniquePopular.length} popular)`);
+    res.json({ data: finalSongs });
 });
 
 // Upload music file

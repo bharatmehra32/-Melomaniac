@@ -145,88 +145,66 @@ function createTrackCard(track) {
 
 // Create track item for list view
 function createTrackItem(track) {
-    if (!track) return null;
-    
+
     const item = document.createElement('div');
     item.className = 'track-item';
-    
-    const coverUrl = track.album?.cover || `https://via.placeholder.com/50?text=${encodeURIComponent((track.title || 'Song').substring(0, 2))}`;
-    const isFullSong = track.source === 'upload' || track.url;
-    const sourceIcon = track.source === 'upload' ? 'fas fa-hdd' : 'fab fa-itunes-note';
-    const sourceText = track.source === 'upload' ? 'Full Song' : '30s Preview';
-    
+
+    const cover = track.album?.cover || 'https://via.placeholder.com/50?text=Music';
+
+    let sourceText = "Preview";
+    if (track.fullAvailable) sourceText = "Full Song";
+
     item.innerHTML = `
-        <img src="${coverUrl}" alt="${track.title || 'Song'}" onerror="this.src='https://via.placeholder.com/50?text=M'">
+        <img src="${cover}">
         <div class="track-item-info">
-            <div class="track-item-name">${track.title || 'Unknown Track'}</div>
-            <div class="track-item-artist">${track.artist?.name || 'Unknown Artist'}</div>
-            <div class="track-source">
-                <i class="${sourceIcon}"></i> ${sourceText}
-            </div>
+            <div class="track-item-name">${track.title}</div>
+            <div class="track-item-artist">${track.artist?.name || "Unknown"}</div>
+            <div class="track-source">${sourceText}</div>
         </div>
-        <button class="track-item-btn" title="Play">
-            <i class="fas fa-play"></i>
+        <button class="track-item-btn">
+            ▶
         </button>
     `;
-    
+
     item.querySelector('.track-item-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         playTrack(track);
     });
-    
     return item;
 }
 
 // Play track
 function playTrack(track) {
-    if (!track) return;
-    
-    currentTrack = track;
-    // Use full URL if available, otherwise use preview
-    audioPlayer.src = track.url || track.preview || '';
-    
-    console.log('Playing track:', track.title, 'Source:', track.source, 'URL:', audioPlayer.src);
-    
-    // Update player display - make sure it's visible
-    const playerContainer = document.querySelector('.player-container');
-    if (playerContainer) {
-        playerContainer.style.display = 'flex';
-    }
-    
-    document.querySelector('.song-name').textContent = track.title || 'Unknown Track';
-    
-    // Add source info to artist name
-    let sourceIndicator = '';
-    if (track.source === 'upload') {
-        sourceIndicator = '<i class="fas fa-hdd"></i> My Music (Full)';
-    } else if (track.source === 'jamendo') {
-        sourceIndicator = '<i class="fas fa-music"></i> Full Song';
-    } else if (track.source === 'deezer') {
-        sourceIndicator = '<i class="fab fa-deezer"></i> Preview';
-    } else if (track.source === 'itunes') {
-        sourceIndicator = '<i class="fab fa-itunes-note"></i> Preview (30s)';
-    } else {
-        sourceIndicator = '<span style="color: var(--primary-color); font-size: 10px;">Preview</span>';
-    }
-    document.querySelector('.artist-name').innerHTML = `${track.artist?.name || 'Unknown Artist'} <span style="color: var(--primary-color); font-size: 10px;">${sourceIndicator}</span>`;
-    
-    const coverUrl = track.album?.cover || `https://via.placeholder.com/56?text=${encodeURIComponent((track.title || 'Music').substring(0, 2))}`;
-    document.getElementById('album-art').src = coverUrl;
-    
-    try {
-        audioPlayer.play().catch(error => {
-            console.error('Playback error:', error);
-            alert('Could not play track: ' + (error.message || 'Unknown error'));
-        });
-        isPlaying = true;
-    } catch (error) {
-        console.error('Play error:', error);
-    }
-    
-    updatePlayButton();
-    updateLikeButton();
-}
 
+    if (!track) return;
+
+    currentTrack = track;
+
+    const source = track.url ? track.url : track.preview;
+
+    if (!source) {
+        alert("Track cannot be played");
+        return;
+    }
+
+    audioPlayer.src = source;
+
+    document.querySelector('.song-name').textContent =
+        track.title || "Unknown Track";
+
+    document.querySelector('.artist-name').textContent =
+        track.artist && track.artist.name ? track.artist.name : "Unknown";
+
+    document.getElementById('album-art').src =
+        track.album && track.album.cover
+            ? track.album.cover
+            : "https://via.placeholder.com/56?text=Music";
+
+    audioPlayer.play();
+    isPlaying = true;
+
+    updatePlayButton();
+}
 // Setup player controls
 function setupPlayerControls() {
     playPauseBtn.addEventListener('click', togglePlayPause);
@@ -358,15 +336,16 @@ async function performSearch() {
 function displaySearchResults(tracks) {
     const container = document.getElementById('search-results');
     container.innerHTML = '';
-    
+
     if (!tracks || tracks.length === 0) {
-        container.innerHTML = '<p style="padding: 20px; color: var(--text-secondary);">No tracks found</p>';
+        container.innerHTML = '<p>No tracks found</p>';
         return;
     }
-    
+
     // Group tracks by source
     const uploadedTracks = tracks.filter(track => track.source === 'upload');
-    const previewTracks = tracks.filter(track => track.source === 'itunes');
+    const fullTracks = tracks.filter(track => track.fullAvailable === true && track.source !== 'upload');
+    const previewTracks = tracks.filter(track => track.fullAvailable === false);
     
     // Display uploaded tracks first
     if (uploadedTracks.length > 0) {
@@ -375,6 +354,22 @@ function displaySearchResults(tracks) {
         container.appendChild(uploadedSection);
         
         uploadedTracks.forEach(track => {
+            if (track) {
+                const item = createTrackItem(track);
+                if (item) {
+                    container.appendChild(item);
+                }
+            }
+        });
+    }
+    
+    // Display full songs
+    if (fullTracks.length > 0) {
+        const fullSection = document.createElement('div');
+        fullSection.innerHTML = '<h3 style="color: var(--primary-color); margin: 20px 0 10px 0;"><i class="fas fa-music"></i> Full Songs Available</h3>';
+        container.appendChild(fullSection);
+        
+        fullTracks.forEach(track => {
             if (track) {
                 const item = createTrackItem(track);
                 if (item) {

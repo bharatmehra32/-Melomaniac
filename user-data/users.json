@@ -15,5 +15,39 @@
       "totalPlays": 0,
       "favoriteSongs": []
     }
+  },
+  {
+    "id": "7b0b5f26-fa50-4892-af59-e991fd51544e",
+    "username": "perumalpuregheesweetshop",
+    "email": "sindhuvaishnavi5@gmail.com",
+    "password": "$2a$10$foELjTh6Nv/R5ehqFKiDP.a92XqvYPeJGP2AhbdxNCrYVlFaJfaWe",
+    "createdAt": "2026-03-06T09:05:00.859Z",
+    "profile": {
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=perumalpuregheesweetshop",
+      "bio": "",
+      "favoriteGenres": []
+    },
+    "stats": {
+      "songsUploaded": 0,
+      "totalPlays": 0,
+      "favoriteSongs": []
+    }
+  },
+  {
+    "id": "77586dd9-213b-4859-938b-b18a9ab58391",
+    "username": "Hiejhiaj",
+    "email": "2diyaa0369@gmail.com",
+    "password": "$2a$10$pawMOlIet0dTeXQatKsm9eRjYZy/e2FxRlzWxlW2I9IjxRXqufai6",
+    "createdAt": "2026-03-06T09:20:27.976Z",
+    "profile": {
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Hiejhiaj",
+      "bio": "",
+      "favoriteGenres": []
+    },
+    "stats": {
+      "songsUploaded": 0,
+      "totalPlays": 0,
+      "favoriteSongs": []
+    }
   }
 ]
